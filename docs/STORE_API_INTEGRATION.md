@@ -28,7 +28,7 @@ The Nyengo Deliveries API provides a complete solution for e-commerce stores to:
 
 ```
 Production: https://api.nyengo-deliveries.com/api/v1
-Development: http://localhost:8082/api/v1
+Development: http://localhost:8083/api/v1
 ```
 
 ### Response Format

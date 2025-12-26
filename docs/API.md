@@ -1,13 +1,24 @@
 # Nyengo Deliveries API Documentation
 
 ## Base URL
+
 ```
 Production: https://api.nyengo.com/api/v1
-Development: http://localhost:8080/api/v1
+Development: http://localhost:8083/api/v1
+```
+
+## API Info Endpoints
+
+```http
+GET /api        # Service info
+GET /api/v1     # Full endpoint documentation
+GET /health     # Health check
 ```
 
 ## Authentication
+
 Most endpoints require a JWT Bearer token in the Authorization header:
+
 ```
 Authorization: Bearer <token>
 ```
@@ -15,6 +26,7 @@ Authorization: Bearer <token>
 ## Courier Endpoints
 
 ### Register Courier
+
 ```http
 POST /couriers/register
 Content-Type: application/json
@@ -34,6 +46,7 @@ Content-Type: application/json
 ```
 
 ### Login
+
 ```http
 POST /couriers/login
 Content-Type: application/json
@@ -45,6 +58,7 @@ Content-Type: application/json
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -56,12 +70,14 @@ Response:
 ```
 
 ### Get Profile
+
 ```http
 GET /couriers/profile
 Authorization: Bearer <token>
 ```
 
 ### Update Profile
+
 ```http
 PUT /couriers/profile
 Authorization: Bearer <token>
@@ -77,6 +93,7 @@ Content-Type: application/json
 ## Pricing Endpoints
 
 ### Get Price Estimate
+
 ```http
 POST /pricing/estimate
 Content-Type: application/json
@@ -94,6 +111,7 @@ Content-Type: application/json
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -113,6 +131,7 @@ Response:
 ## Order Endpoints
 
 ### Create Order
+
 ```http
 POST /orders
 Authorization: Bearer <token>
@@ -134,18 +153,21 @@ Content-Type: application/json
 ```
 
 ### List Orders
+
 ```http
 GET /orders?page=1&pageSize=20&status=pending,in_transit
 Authorization: Bearer <token>
 ```
 
 ### Get Order Details
+
 ```http
 GET /orders/{id}
 Authorization: Bearer <token>
 ```
 
 ### Update Order Status
+
 ```http
 PUT /orders/{id}/status
 Authorization: Bearer <token>
@@ -158,6 +180,7 @@ Content-Type: application/json
 ```
 
 ### Accept/Decline Order
+
 ```http
 PUT /orders/{id}/accept
 PUT /orders/{id}/decline
@@ -167,12 +190,14 @@ Authorization: Bearer <token>
 ## Store Integration Endpoints
 
 ### List Available Couriers
+
 ```http
 GET /stores/couriers?area=Lusaka
 X-API-Key: <store-api-key>
 ```
 
 ### Create Order (from Store)
+
 ```http
 POST /stores/orders
 X-API-Key: <store-api-key>
@@ -186,22 +211,26 @@ Content-Type: application/json
 ```
 
 ### Track Order Status
+
 ```http
 GET /stores/orders/{id}/status
 X-API-Key: <store-api-key>
 ```
 
 ## WebSocket Connection
+
 ```
-ws://localhost:8080/ws?token=<jwt-token>
+ws://localhost:8083/ws?token=<jwt-token>
 ```
 
 Events:
+
 - `new_order` - New order received
 - `order_update` - Order status changed
 - `chat_message` - New chat message
 
 ## Error Responses
+
 ```json
 {
   "success": false,
