@@ -265,8 +265,9 @@ func (s *TrackingService) UpdateLocation(ctx context.Context, update *LocationUp
 }
 
 // GetLiveTracking retrieves current tracking data for an order
+// If no active tracking, returns order details with status "pending_pickup"
 func (s *TrackingService) GetLiveTracking(ctx context.Context, orderID uuid.UUID) (*LiveDelivery, error) {
-	// Get order to retrieve orderNumber
+	// Get order to retrieve orderNumber and details
 	order, err := s.orderRepo.GetByID(ctx, orderID)
 	if err != nil {
 		return nil, fmt.Errorf("order not found: %w", err)
@@ -290,7 +291,24 @@ func (s *TrackingService) GetLiveTracking(ctx context.Context, orderID uuid.UUID
 		}
 	}
 
-	return nil, fmt.Errorf("no tracking data for order %s", orderNumber)
+	// No active tracking - return order details with pending status
+	// This allows store apps to get pickup/delivery info before courier starts
+	return &LiveDelivery{
+		OrderID:        order.ID,
+		OrderNumber:    order.OrderNumber,
+		CourierID:      order.CourierID,
+		DriverName:     "", // Not assigned yet
+		DriverPhone:    "", // Not assigned yet
+		VehicleType:    "", // Not assigned yet
+		DestinationLat: order.DeliveryLatitude,
+		DestinationLng: order.DeliveryLongitude,
+		Status:         "pending_pickup", // Order created but courier hasn't started
+		IsActive:       false,
+		CurrentLocation: Location{
+			Latitude:  order.PickupLatitude,
+			Longitude: order.PickupLongitude,
+		},
+	}, nil
 }
 
 // GetLocationHistory retrieves location history for an order
