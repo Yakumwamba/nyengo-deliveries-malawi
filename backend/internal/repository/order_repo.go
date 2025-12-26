@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -47,6 +49,10 @@ func (r *OrderRepository) Create(ctx context.Context, order *models.Order) error
 	order.UpdatedAt = time.Now()
 	order.Status = models.OrderStatusPending
 	order.PaymentStatus = models.PaymentStatusPending
+
+	// Log the order object being created
+	orderJSON, _ := json.MarshalIndent(order, "", "  ")
+	log.Printf("📦 Creating new order in database:\n%s", string(orderJSON))
 
 	_, err := r.db.Exec(ctx, query,
 		order.ID,
