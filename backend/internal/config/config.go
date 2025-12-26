@@ -52,6 +52,9 @@ type Config struct {
 
 	// Store API Keys (for third-party store integrations)
 	StoreAPIKeys []string
+
+	// Webhook settings
+	WebhookSecret string // Shared secret for delivery webhook authentication
 }
 
 // CurrencyPresets contains preset configurations for different currencies
@@ -182,6 +185,9 @@ func LoadConfig() *Config {
 
 		// Store API Keys (comma-separated in env)
 		StoreAPIKeys: getStoreAPIKeys(),
+
+		// Webhook settings
+		WebhookSecret: getEnv("WEBHOOK_SECRET", "nyg_webhook_secret_dev_2024"),
 	}
 
 	// Auto-fill currency symbol and locale if not set

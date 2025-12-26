@@ -66,7 +66,7 @@ func main() {
 	orderHandler := handlers.NewOrderHandler(orderService, notificationService, wsHub)
 	pricingHandler := handlers.NewPricingHandler(pricingService)
 	storeHandler := handlers.NewStoreHandler(courierService, orderService, pricingService, externalCourierService, cfg)
-	webhookHandler := handlers.NewWebhookHandler(orderService, notificationService)
+	webhookHandler := handlers.NewWebhookHandler(orderService, notificationService, orderRepo, cfg)
 	trackingHandler := handlers.NewTrackingHandler(trackingService, orderRepo)
 	paymentHandler := handlers.NewPaymentHandler(paymentService)
 
@@ -83,7 +83,7 @@ func main() {
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.AllowedOrigins,
 		AllowMethods:     "GET,POST,PUT,DELETE,PATCH,OPTIONS",
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-API-Key",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-API-Key,X-Webhook-Secret",
 		AllowCredentials: true,
 	}))
 
@@ -190,6 +190,10 @@ func main() {
 
 	// Rate limiting middleware for API routes
 	api.Use(middleware.RateLimiter(cfg.RateLimitRequests, cfg.RateLimitDuration))
+
+	// Delivery webhook from courier platform (not rate limited, auth via X-Webhook-Secret)
+	// POST /api/delivery/webhook
+	app.Post("/api/delivery/webhook", webhookHandler.HandleDeliveryWebhook)
 
 	// Public routes
 	api.Post("/couriers/register", courierHandler.Register)
