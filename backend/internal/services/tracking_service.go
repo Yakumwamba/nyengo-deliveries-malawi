@@ -28,6 +28,7 @@ type TrackingService struct {
 // LiveDelivery represents an active delivery being tracked
 type LiveDelivery struct {
 	OrderID      uuid.UUID `json:"orderId"`
+	OrderNumber  string    `json:"orderNumber"` // Human-readable order number (NYG-*)
 	CourierID    uuid.UUID `json:"courierId"`
 	DriverName   string    `json:"driverName"`
 	DriverPhone  string    `json:"driverPhone"`
@@ -106,6 +107,7 @@ func (s *TrackingService) StartTracking(ctx context.Context, orderID uuid.UUID, 
 
 	delivery := &LiveDelivery{
 		OrderID:        orderID,
+		OrderNumber:    order.OrderNumber, // Use orderNumber for tracking
 		CourierID:      order.CourierID,
 		DriverName:     driverInfo.Name,
 		DriverPhone:    driverInfo.Phone,
@@ -118,13 +120,13 @@ func (s *TrackingService) StartTracking(ctx context.Context, orderID uuid.UUID, 
 		LastUpdatedAt:  time.Now(),
 	}
 
-	// Store in memory
-	s.activeDeliveries.Store(orderID.String(), delivery)
+	// Store in memory using orderNumber as key
+	s.activeDeliveries.Store(order.OrderNumber, delivery)
 
 	// Store in Redis for persistence across restarts
 	if s.redis != nil {
 		data, _ := json.Marshal(delivery)
-		s.redis.Set(ctx, s.getTrackingKey(orderID), data, 24*time.Hour)
+		s.redis.Set(ctx, s.getTrackingKey(order.OrderNumber), data, 24*time.Hour)
 	}
 
 	// Create database record
@@ -143,33 +145,39 @@ func (s *TrackingService) StartTracking(ctx context.Context, orderID uuid.UUID, 
 	}
 
 	// Broadcast tracking started event
-	s.broadcastEvent(ctx, orderID, "tracking_started", delivery)
+	s.broadcastEvent(ctx, order.OrderNumber, "tracking_started", delivery)
 
 	return nil
 }
 
 // UpdateLocation processes a location update from driver
 func (s *TrackingService) UpdateLocation(ctx context.Context, update *LocationUpdate) (*LiveDelivery, error) {
-	orderIDStr := update.OrderID.String()
+	// First, we need to find the delivery by order ID
+	// Try to load from memory or Redis using order ID to get the orderNumber
+	order, err := s.orderRepo.GetByID(ctx, update.OrderID)
+	if err != nil {
+		return nil, fmt.Errorf("order not found: %w", err)
+	}
+	orderNumber := order.OrderNumber
 
-	// Get active delivery
-	val, exists := s.activeDeliveries.Load(orderIDStr)
+	// Get active delivery using orderNumber
+	val, exists := s.activeDeliveries.Load(orderNumber)
 	if !exists {
 		// Try to load from Redis
 		if s.redis != nil {
-			data, err := s.redis.Get(ctx, s.getTrackingKey(update.OrderID)).Bytes()
+			data, err := s.redis.Get(ctx, s.getTrackingKey(orderNumber)).Bytes()
 			if err == nil {
 				var delivery LiveDelivery
 				if json.Unmarshal(data, &delivery) == nil {
 					val = &delivery
-					s.activeDeliveries.Store(orderIDStr, &delivery)
+					s.activeDeliveries.Store(orderNumber, &delivery)
 					exists = true
 				}
 			}
 		}
 
 		if !exists {
-			return nil, fmt.Errorf("no active tracking for order %s", orderIDStr)
+			return nil, fmt.Errorf("no active tracking for order %s", orderNumber)
 		}
 	}
 
@@ -205,23 +213,23 @@ func (s *TrackingService) UpdateLocation(ctx context.Context, update *LocationUp
 	}
 	delivery.EstimatedArrival = now.Add(time.Duration(delivery.ETAMinutes) * time.Minute)
 
-	// Update in memory
-	s.activeDeliveries.Store(orderIDStr, delivery)
+	// Update in memory using orderNumber
+	s.activeDeliveries.Store(orderNumber, delivery)
 
 	// Update in Redis
 	if s.redis != nil {
 		data, _ := json.Marshal(delivery)
-		s.redis.Set(ctx, s.getTrackingKey(update.OrderID), data, 24*time.Hour)
+		s.redis.Set(ctx, s.getTrackingKey(orderNumber), data, 24*time.Hour)
 
 		// Also store location in a sorted set for history
 		locationData, _ := json.Marshal(delivery.CurrentLocation)
-		s.redis.ZAdd(ctx, s.getHistoryKey(update.OrderID), redis.Z{
+		s.redis.ZAdd(ctx, s.getHistoryKey(orderNumber), redis.Z{
 			Score:  float64(now.UnixMilli()),
 			Member: locationData,
 		})
 
 		// Keep only last 1000 points
-		s.redis.ZRemRangeByRank(ctx, s.getHistoryKey(update.OrderID), 0, -1001)
+		s.redis.ZRemRangeByRank(ctx, s.getHistoryKey(orderNumber), 0, -1001)
 	}
 
 	// Update database (async to not block)
@@ -246,7 +254,7 @@ func (s *TrackingService) UpdateLocation(ctx context.Context, update *LocationUp
 	}()
 
 	// Broadcast location update to subscribers
-	s.broadcastEvent(ctx, update.OrderID, "location_update", map[string]interface{}{
+	s.broadcastEvent(ctx, orderNumber, "location_update", map[string]interface{}{
 		"location":          delivery.CurrentLocation,
 		"distanceRemaining": delivery.DistanceRemaining,
 		"etaMinutes":        delivery.ETAMinutes,
@@ -258,30 +266,42 @@ func (s *TrackingService) UpdateLocation(ctx context.Context, update *LocationUp
 
 // GetLiveTracking retrieves current tracking data for an order
 func (s *TrackingService) GetLiveTracking(ctx context.Context, orderID uuid.UUID) (*LiveDelivery, error) {
-	orderIDStr := orderID.String()
+	// Get order to retrieve orderNumber
+	order, err := s.orderRepo.GetByID(ctx, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("order not found: %w", err)
+	}
+	orderNumber := order.OrderNumber
 
-	// Check memory first
-	if val, exists := s.activeDeliveries.Load(orderIDStr); exists {
+	// Check memory first using orderNumber
+	if val, exists := s.activeDeliveries.Load(orderNumber); exists {
 		return val.(*LiveDelivery), nil
 	}
 
 	// Check Redis
 	if s.redis != nil {
-		data, err := s.redis.Get(ctx, s.getTrackingKey(orderID)).Bytes()
+		data, err := s.redis.Get(ctx, s.getTrackingKey(orderNumber)).Bytes()
 		if err == nil {
 			var delivery LiveDelivery
 			if json.Unmarshal(data, &delivery) == nil {
-				s.activeDeliveries.Store(orderIDStr, &delivery)
+				s.activeDeliveries.Store(orderNumber, &delivery)
 				return &delivery, nil
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("no tracking data for order %s", orderIDStr)
+	return nil, fmt.Errorf("no tracking data for order %s", orderNumber)
 }
 
 // GetLocationHistory retrieves location history for an order
 func (s *TrackingService) GetLocationHistory(ctx context.Context, orderID uuid.UUID, limit int) ([]Location, error) {
+	// Get order to retrieve orderNumber
+	order, err := s.orderRepo.GetByID(ctx, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("order not found: %w", err)
+	}
+	orderNumber := order.OrderNumber
+
 	if s.redis == nil {
 		// Fall back to database
 		tracking, err := s.deliveryRepo.GetByOrderID(ctx, orderID)
@@ -307,8 +327,8 @@ func (s *TrackingService) GetLocationHistory(ctx context.Context, orderID uuid.U
 		return locations, nil
 	}
 
-	// Get from Redis
-	results, err := s.redis.ZRevRange(ctx, s.getHistoryKey(orderID), 0, int64(limit-1)).Result()
+	// Get from Redis using orderNumber
+	results, err := s.redis.ZRevRange(ctx, s.getHistoryKey(orderNumber), 0, int64(limit-1)).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -326,16 +346,21 @@ func (s *TrackingService) GetLocationHistory(ctx context.Context, orderID uuid.U
 
 // StopTracking ends tracking for an order
 func (s *TrackingService) StopTracking(ctx context.Context, orderID uuid.UUID, reason string) error {
-	orderIDStr := orderID.String()
+	// Get order to retrieve orderNumber
+	order, err := s.orderRepo.GetByID(ctx, orderID)
+	if err != nil {
+		return fmt.Errorf("order not found: %w", err)
+	}
+	orderNumber := order.OrderNumber
 
-	// Remove from memory
-	s.activeDeliveries.Delete(orderIDStr)
+	// Remove from memory using orderNumber
+	s.activeDeliveries.Delete(orderNumber)
 
 	// Remove from Redis
 	if s.redis != nil {
-		s.redis.Del(ctx, s.getTrackingKey(orderID))
+		s.redis.Del(ctx, s.getTrackingKey(orderNumber))
 		// Keep history for 7 days
-		s.redis.Expire(ctx, s.getHistoryKey(orderID), 7*24*time.Hour)
+		s.redis.Expire(ctx, s.getHistoryKey(orderNumber), 7*24*time.Hour)
 	}
 
 	// Update database
@@ -344,7 +369,7 @@ func (s *TrackingService) StopTracking(ctx context.Context, orderID uuid.UUID, r
 	}
 
 	// Broadcast tracking stopped
-	s.broadcastEvent(ctx, orderID, "tracking_stopped", map[string]string{
+	s.broadcastEvent(ctx, orderNumber, "tracking_stopped", map[string]string{
 		"reason": reason,
 	})
 
@@ -359,7 +384,14 @@ func (s *TrackingService) SubscribeToOrder(ctx context.Context, orderID uuid.UUI
 		return ch, func() { close(ch) }
 	}
 
-	pubsub := s.redis.Subscribe(ctx, s.getChannelKey(orderID))
+	// Get order to retrieve orderNumber
+	order, err := s.orderRepo.GetByID(ctx, orderID)
+	if err != nil {
+		return ch, func() { close(ch) }
+	}
+	orderNumber := order.OrderNumber
+
+	pubsub := s.redis.Subscribe(ctx, s.getChannelKey(orderNumber))
 
 	go func() {
 		defer close(ch)
@@ -388,17 +420,17 @@ func (s *TrackingService) SubscribeToOrder(ctx context.Context, orderID uuid.UUI
 }
 
 // broadcastEvent publishes a tracking event
-func (s *TrackingService) broadcastEvent(ctx context.Context, orderID uuid.UUID, eventType string, data interface{}) {
+func (s *TrackingService) broadcastEvent(ctx context.Context, orderNumber string, eventType string, data interface{}) {
 	event := TrackingEvent{
 		Type:      eventType,
-		OrderID:   orderID.String(),
+		OrderID:   orderNumber, // Use orderNumber as the identifier
 		Timestamp: time.Now(),
 		Data:      data,
 	}
 
 	if s.redis != nil {
 		payload, _ := json.Marshal(event)
-		s.redis.Publish(ctx, s.getChannelKey(orderID), payload)
+		s.redis.Publish(ctx, s.getChannelKey(orderNumber), payload)
 	}
 }
 
@@ -436,17 +468,17 @@ func (s *TrackingService) cleanupStaleDeliveries() {
 	}
 }
 
-// Helper functions for Redis keys
-func (s *TrackingService) getTrackingKey(orderID uuid.UUID) string {
-	return fmt.Sprintf("tracking:%s", orderID.String())
+// Helper functions for Redis keys - use orderNumber for human-readable tracking
+func (s *TrackingService) getTrackingKey(orderNumber string) string {
+	return fmt.Sprintf("tracking:%s", orderNumber)
 }
 
-func (s *TrackingService) getHistoryKey(orderID uuid.UUID) string {
-	return fmt.Sprintf("tracking:%s:history", orderID.String())
+func (s *TrackingService) getHistoryKey(orderNumber string) string {
+	return fmt.Sprintf("tracking:%s:history", orderNumber)
 }
 
-func (s *TrackingService) getChannelKey(orderID uuid.UUID) string {
-	return fmt.Sprintf("tracking:%s:events", orderID.String())
+func (s *TrackingService) getChannelKey(orderNumber string) string {
+	return fmt.Sprintf("tracking:%s:events", orderNumber)
 }
 
 // DriverInfo contains driver details for tracking
