@@ -139,10 +139,26 @@ func (h *TrackingHandler) GetLiveTracking(c *fiber.Ctx) error {
 
 	delivery, err := h.trackingService.GetLiveTracking(c.Context(), orderID)
 	if err != nil {
-		return NotFound(c, "No active tracking for this order")
+		return NotFound(c, "Order not found")
 	}
 
-	return Success(c, delivery)
+	// Build appropriate message based on tracking status
+	var message string
+	switch delivery.Status {
+	case "pending_pickup":
+		message = "Order created. Waiting for courier to start pickup."
+	case "tracking":
+		message = "Courier is on the way. Live tracking is active."
+	case "delivered":
+		message = "Order has been delivered."
+	default:
+		message = "Order tracking data retrieved."
+	}
+
+	return Success(c, fiber.Map{
+		"message":  message,
+		"tracking": delivery,
+	})
 }
 
 // GetLocationHistory retrieves location history
