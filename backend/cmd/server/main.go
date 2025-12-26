@@ -87,6 +87,26 @@ func main() {
 		AllowCredentials: true,
 	}))
 
+	// Favicon handler
+	app.Get("/favicon.ico", func(c *fiber.Ctx) error {
+		// Return a simple 1x1 transparent PNG as favicon
+		c.Set("Content-Type", "image/x-icon")
+		c.Set("Cache-Control", "public, max-age=31536000")
+		// Minimal ICO file (1x1 transparent)
+		ico := []byte{
+			0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x01,
+			0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x30, 0x00,
+			0x00, 0x00, 0x16, 0x00, 0x00, 0x00, 0x28, 0x00,
+			0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00,
+			0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		}
+		return c.Send(ico)
+	})
+
 	// Health check endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -96,8 +116,77 @@ func main() {
 		})
 	})
 
+	// API root info endpoint
+	app.Get("/api", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"service":     "Nyengo Deliveries API",
+			"version":     "1.0.0",
+			"description": "Delivery management and courier services API",
+			"endpoints": fiber.Map{
+				"health": "/health",
+				"api_v1": "/api/v1",
+				"docs":   "See API documentation for full endpoint list",
+			},
+		})
+	})
+	app.Get("/api/", func(c *fiber.Ctx) error {
+		return c.Redirect("/api", fiber.StatusMovedPermanently)
+	})
+
 	// API v1 routes
 	api := app.Group("/api/v1")
+
+	// API v1 info endpoint
+	api.Get("/", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"service":     "Nyengo Deliveries API",
+			"version":     "v1",
+			"description": "Delivery management and courier services API",
+			"currency":    cfg.Currency,
+			"endpoints": fiber.Map{
+				"auth": fiber.Map{
+					"register": "POST /api/v1/couriers/register",
+					"login":    "POST /api/v1/couriers/login",
+				},
+				"couriers": fiber.Map{
+					"profile":   "GET /api/v1/couriers/profile",
+					"available": "GET /api/v1/couriers/available",
+					"rates":     "GET /api/v1/couriers/:id/rates",
+				},
+				"stores": fiber.Map{
+					"list_couriers": "GET /api/v1/stores/couriers",
+					"create_order":  "POST /api/v1/stores/orders",
+					"order_status":  "GET /api/v1/stores/orders/:id/status",
+				},
+				"orders": fiber.Map{
+					"create":        "POST /api/v1/orders",
+					"list":          "GET /api/v1/orders",
+					"get":           "GET /api/v1/orders/:id",
+					"update_status": "PUT /api/v1/orders/:id/status",
+					"accept":        "PUT /api/v1/orders/:id/accept",
+					"decline":       "PUT /api/v1/orders/:id/decline",
+				},
+				"tracking": fiber.Map{
+					"live":    "GET /api/v1/tracking/:orderId",
+					"history": "GET /api/v1/tracking/:orderId/history",
+					"start":   "POST /api/v1/tracking/:orderId/start",
+					"update":  "POST /api/v1/tracking/:orderId/location",
+					"stop":    "POST /api/v1/tracking/:orderId/stop",
+				},
+				"payments": fiber.Map{
+					"verify":       "GET /api/v1/payments/verify/:orderId",
+					"payable":      "GET /api/v1/payments/payable-orders",
+					"request":      "POST /api/v1/payments/payouts",
+					"history":      "GET /api/v1/payments/payouts",
+					"earnings":     "GET /api/v1/payments/earnings",
+					"transactions": "GET /api/v1/payments/wallet/transactions",
+				},
+				"pricing": fiber.Map{
+					"estimate": "POST /api/v1/pricing/estimate",
+				},
+			},
+		})
+	})
 
 	// Rate limiting middleware for API routes
 	api.Use(middleware.RateLimiter(cfg.RateLimitRequests, cfg.RateLimitDuration))

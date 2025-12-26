@@ -171,7 +171,7 @@ func (r *CourierRepository) Update(ctx context.Context, courier *models.Courier)
 // ListActive retrieves all active couriers
 func (r *CourierRepository) ListActive(ctx context.Context) ([]models.CourierListItem, error) {
 	query := `
-		SELECT id, company_name, logo_url, rating, total_reviews, total_deliveries,
+		SELECT id, company_name, COALESCE(logo_url, '') as logo_url, rating, total_reviews, total_deliveries,
 			base_rate_per_km, minimum_fare, is_verified, is_featured
 		FROM couriers
 		WHERE is_active = true
@@ -211,7 +211,7 @@ func (r *CourierRepository) ListActive(ctx context.Context) ([]models.CourierLis
 // ListByArea retrieves couriers that serve a specific area
 func (r *CourierRepository) ListByArea(ctx context.Context, area string) ([]models.CourierListItem, error) {
 	query := `
-		SELECT id, company_name, logo_url, rating, total_reviews, total_deliveries,
+		SELECT id, company_name, COALESCE(logo_url, '') as logo_url, rating, total_reviews, total_deliveries,
 			base_rate_per_km, minimum_fare, is_verified, is_featured
 		FROM couriers
 		WHERE is_active = true AND $1 = ANY(service_areas)
