@@ -99,17 +99,22 @@ func (r *OrderRepository) Create(ctx context.Context, order *models.Order) error
 // GetByID retrieves an order by ID
 func (r *OrderRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Order, error) {
 	query := `
-		SELECT id, order_number, courier_id, store_id, external_order_id,
-			customer_name, customer_phone, customer_email,
-			pickup_address, pickup_latitude, pickup_longitude, pickup_notes,
-			pickup_contact_name, pickup_contact_phone,
-			delivery_address, delivery_latitude, delivery_longitude, delivery_notes,
+		SELECT id, order_number, courier_id, 
+			COALESCE(store_id, '00000000-0000-0000-0000-000000000000') as store_id, 
+			COALESCE(external_order_id, '') as external_order_id,
+			customer_name, customer_phone, COALESCE(customer_email, '') as customer_email,
+			pickup_address, pickup_latitude, pickup_longitude, COALESCE(pickup_notes, '') as pickup_notes,
+			COALESCE(pickup_contact_name, '') as pickup_contact_name, COALESCE(pickup_contact_phone, '') as pickup_contact_phone,
+			delivery_address, delivery_latitude, delivery_longitude, COALESCE(delivery_notes, '') as delivery_notes,
 			package_description, package_size, package_weight, is_fragile, requires_signature,
 			distance, base_fare, distance_fare, surge_fare, total_fare, platform_fee, courier_earnings,
-			payment_method, payment_status, payment_reference, status,
+			payment_method, payment_status, COALESCE(payment_reference, '') as payment_reference, status,
 			scheduled_pickup, actual_pickup, estimated_delivery, actual_delivery,
-			delivery_proof_url, recipient_name, signature_url,
-			customer_rating, customer_feedback, notes,
+			COALESCE(delivery_proof_url, '') as delivery_proof_url, 
+			COALESCE(recipient_name, '') as recipient_name, 
+			COALESCE(signature_url, '') as signature_url,
+			customer_rating, COALESCE(customer_feedback, '') as customer_feedback, 
+			COALESCE(notes, '') as notes,
 			created_at, updated_at
 		FROM orders WHERE id = $1
 	`

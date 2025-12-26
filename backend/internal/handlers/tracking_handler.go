@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -34,10 +35,13 @@ func (h *TrackingHandler) resolveOrderID(c *fiber.Ctx, orderIDParam string) (uui
 
 	// Not a UUID, might be an order number (e.g., NYG-20251226-AF857C71)
 	if strings.HasPrefix(orderIDParam, "NYG-") {
+		log.Printf("🔍 Looking up order number: %s", orderIDParam)
 		order, err := h.orderRepo.GetByOrderNumber(c.Context(), orderIDParam)
 		if err != nil {
+			log.Printf("❌ Order number lookup failed: %v", err)
 			return uuid.Nil, err
 		}
+		log.Printf("✅ Order number resolved to UUID: %s", order.ID)
 		return order.ID, nil
 	}
 
