@@ -67,7 +67,7 @@ func main() {
 	pricingHandler := handlers.NewPricingHandler(pricingService)
 	storeHandler := handlers.NewStoreHandler(courierService, orderService, pricingService, externalCourierService, cfg)
 	webhookHandler := handlers.NewWebhookHandler(orderService, notificationService)
-	trackingHandler := handlers.NewTrackingHandler(trackingService)
+	trackingHandler := handlers.NewTrackingHandler(trackingService, orderRepo)
 	paymentHandler := handlers.NewPaymentHandler(paymentService)
 
 	// Create Fiber app

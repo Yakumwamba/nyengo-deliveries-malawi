@@ -1,20 +1,47 @@
 package handlers
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"nyengo-deliveries/internal/repository"
 	"nyengo-deliveries/internal/services"
 )
 
 // TrackingHandler handles live tracking API endpoints
 type TrackingHandler struct {
 	trackingService *services.TrackingService
+	orderRepo       *repository.OrderRepository
 }
 
 // NewTrackingHandler creates a new tracking handler
-func NewTrackingHandler(trackingService *services.TrackingService) *TrackingHandler {
-	return &TrackingHandler{trackingService: trackingService}
+func NewTrackingHandler(trackingService *services.TrackingService, orderRepo *repository.OrderRepository) *TrackingHandler {
+	return &TrackingHandler{
+		trackingService: trackingService,
+		orderRepo:       orderRepo,
+	}
+}
+
+// resolveOrderID resolves an order identifier (UUID or order number) to a UUID
+func (h *TrackingHandler) resolveOrderID(c *fiber.Ctx, orderIDParam string) (uuid.UUID, error) {
+	// Try to parse as UUID first
+	orderID, err := uuid.Parse(orderIDParam)
+	if err == nil {
+		return orderID, nil
+	}
+
+	// Not a UUID, might be an order number (e.g., NYG-20251226-AF857C71)
+	if strings.HasPrefix(orderIDParam, "NYG-") {
+		order, err := h.orderRepo.GetByOrderNumber(c.Context(), orderIDParam)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		return order.ID, nil
+	}
+
+	return uuid.Nil, err
 }
 
 // StartTracking initiates tracking for an order
@@ -97,10 +124,13 @@ func (h *TrackingHandler) UpdateLocation(c *fiber.Ctx) error {
 
 // GetLiveTracking retrieves current tracking data
 // GET /api/v1/tracking/:orderId
+// Accepts both UUID and order number (e.g., NYG-20251226-AF857C71)
 func (h *TrackingHandler) GetLiveTracking(c *fiber.Ctx) error {
-	orderID, err := uuid.Parse(c.Params("orderId"))
+	orderIDParam := c.Params("orderId")
+
+	orderID, err := h.resolveOrderID(c, orderIDParam)
 	if err != nil {
-		return BadRequest(c, "Invalid order ID")
+		return BadRequest(c, "Invalid order ID or order number not found")
 	}
 
 	delivery, err := h.trackingService.GetLiveTracking(c.Context(), orderID)
